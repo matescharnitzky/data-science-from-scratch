@@ -503,14 +503,13 @@ class SimpleRnn(Layer):
     def grads(self) -> Iterable[Tensor]:
         return [self.w_grad, self.u_grad, self.b_grad]
 
-
 def main():
     from matplotlib import pyplot as plt
-
+    
     def text_size(total: int) -> float:
         """equals 8 if total is 0, 28 if total is 200"""
         return 8 + total / 200 * 20
-
+    
     for word, job_popularity, resume_popularity in data:
         plt.text(job_popularity, resume_popularity, word,
                  ha='center', va='center',
@@ -521,64 +520,64 @@ def main():
     plt.xticks([])
     plt.yticks([])
     # plt.show()
-
-
+    
+    
     plt.close()
-
+    
     import re
-
+    
     # This is not a great regex, but it works on our data.
     tokenized_sentences = [re.findall("[a-z]+|[.]", sentence.lower())
                            for sentence in sentences]
-
+    
     # Create a vocabulary (that is, a mapping word -> word_id) based on our text.
     vocab = Vocabulary(word
                        for sentence_words in tokenized_sentences
                        for word in sentence_words)
-
+    
     from scratch.deep_learning import Tensor, one_hot_encode
-
+    
     inputs: List[int] = []
     targets: List[Tensor] = []
-
+    
     for sentence in tokenized_sentences:
         for i, word in enumerate(sentence):          # For each word
             for j in [i - 2, i - 1, i + 1, i + 2]:   # take the nearby locations
                 if 0 <= j < len(sentence):           # that aren't out of bounds
                     nearby_word = sentence[j]        # and get those words.
-
+    
                     # Add an input that's the original word_id
                     inputs.append(vocab.get_id(word))
-
+    
                     # Add a target that's the one-hot-encoded nearby word
                     targets.append(vocab.one_hot_encode(nearby_word))
-
-
+    
+    
     # Model for learning word vectors
-
+    
     from scratch.deep_learning import Sequential, Linear
-
+    
     random.seed(0)
     EMBEDDING_DIM = 5  # seems like a good size
-
+    
     # Define the embedding layer separately, so we can reference it.
     embedding = TextEmbedding(vocab=vocab, embedding_dim=EMBEDDING_DIM)
-
+    
     model = Sequential([
         # Given a word (as a vector of word_ids), look up its embedding.
         embedding,
         # And use a linear layer to compute scores for "nearby words".
         Linear(input_dim=EMBEDDING_DIM, output_dim=vocab.size)
     ])
-
-
+    
+    
     # Train the word vector model
-
+    
     from scratch.deep_learning import SoftmaxCrossEntropy, Momentum, GradientDescent
-
+    
     loss = SoftmaxCrossEntropy()
     optimizer = GradientDescent(learning_rate=0.01)
-
+    
     for epoch in range(100):
         epoch_loss = 0.0
         for input, target in zip(inputs, targets):
@@ -591,110 +590,110 @@ def main():
         print(embedding.closest("black"))   # and also a few nearest words
         print(embedding.closest("slow"))    # so we can see what's being
         print(embedding.closest("car"))     # learned.
-
-
-
+    
+    
+    
     # Explore most similar words
-
+    
     pairs = [(cosine_similarity(embedding[w1], embedding[w2]), w1, w2)
              for w1 in vocab.w2i
              for w2 in vocab.w2i
              if w1 < w2]
     pairs.sort(reverse=True)
     print(pairs[:5])
-
-
+    
+    
     # Plot word vectors
     plt.close()
-
+    
     from scratch.working_with_data import pca, transform
     import matplotlib.pyplot as plt
-
+    
     # Extract the first two principal components and transform the word vectors
     components = pca(embedding.embeddings, 2)
     transformed = transform(embedding.embeddings, components)
-
+    
     # Scatter the points (and make them white so they're "invisible")
     fig, ax = plt.subplots()
     ax.scatter(*zip(*transformed), marker='.', color='w')
-
+    
     # Add annotations for each word at its transformed location
     for word, idx in vocab.w2i.items():
         ax.annotate(word, transformed[idx])
-
+    
     # And hide the axes
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
-
+    
     # plt.show()
-
-
-
+    
+    
+    
     plt.savefig('im/word_vectors')
     plt.gca().clear()
     plt.close()
-
+    
     from bs4 import BeautifulSoup
     import requests
-
+    
     url = "https://www.ycombinator.com/topcompanies/"
     soup = BeautifulSoup(requests.get(url).text, 'lxml')  # html5lib
-
+    
     # We get the companies twice, so use a set comprehension to deduplicate.
     companies = list({b.text
                       for b in soup("b")
                       if "h4" in b.get("class", ())})
     assert len(companies) == 101
-
+    
     vocab = Vocabulary([c for company in companies for c in company])
-
+    
     START = "^"
     STOP = "$"
-
+    
     # We need to add them to the vocabulary too.
     vocab.add(START)
     vocab.add(STOP)
-
+    
     HIDDEN_DIM = 32  # You should experiment with different sizes!
-
+    
     rnn1 =  SimpleRnn(input_dim=vocab.size, hidden_dim=HIDDEN_DIM)
     rnn2 =  SimpleRnn(input_dim=HIDDEN_DIM, hidden_dim=HIDDEN_DIM)
     linear = Linear(input_dim=HIDDEN_DIM, output_dim=vocab.size)
-
+    
     model = Sequential([
         rnn1,
         rnn2,
         linear
     ])
-
+    
     from scratch.deep_learning import softmax
-
+    
     def generate(seed: str = START, max_len: int = 50) -> str:
         rnn1.reset_hidden_state()  # Reset both hidden states.
         rnn2.reset_hidden_state()
         output = [seed]            # Start the output with the specified seed.
-
+    
         # Keep going until we produce the STOP character or reach the max length
         while output[-1] != STOP and len(output) < max_len:
             # Use the last character as the input
             input = vocab.one_hot_encode(output[-1])
-
+    
             # Generate scores using the model
             predicted = model.forward(input)
-
+    
             # Convert them to probabilities and draw a random char_id
             probabilities = softmax(predicted)
             next_char_id = sample_from(probabilities)
-
+    
             # Add the corresponding char to our output
             output.append(vocab.get_word(next_char_id))
-
+    
         # Get rid of START and END characters and return the word.
         return ''.join(output[1:-1])
-
+    
     loss = SoftmaxCrossEntropy()
     optimizer = Momentum(learning_rate=0.01, momentum=0.9)
-
+    
     for epoch in range(300):
         random.shuffle(companies)  # Train in a different order each epoch.
         epoch_loss = 0             # Track the loss.
@@ -702,7 +701,7 @@ def main():
             rnn1.reset_hidden_state()  # Reset both hidden states.
             rnn2.reset_hidden_state()
             company = START + company + STOP   # Add START and STOP characters.
-
+    
             # The rest is just our usual training loop, except that the inputs
             # and target are the one-hot-encoded previous and next characters.
             for prev, next in zip(company, company[1:]):
@@ -713,12 +712,13 @@ def main():
                 gradient = loss.gradient(predicted, target)
                 model.backward(gradient)
                 optimizer.step(model)
-
+    
         # Each epoch print the loss and also generate a name
         print(epoch, epoch_loss, generate())
-
+    
         # Turn down the learning rate for the last 100 epochs.
         # There's no principled reason for this, but it seems to work.
         if epoch == 200:
             optimizer.lr *= 0.1
+    
 if __name__ == "__main__": main()
